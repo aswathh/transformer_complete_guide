@@ -326,6 +326,7 @@ E_fine = [0.18,  0.33,  0.20, -0.05]
 | **Output** | `(2, 4)` |
 
 ---
+<img width="423" height="340" alt="image" src="https://github.com/user-attachments/assets/2dd176e2-9df9-4b5a-bcae-b5dc249ed6df" />
 
 ### Step 19 — Q, K, V Projection (decoder's own)
 
