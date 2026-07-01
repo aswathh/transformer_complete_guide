@@ -10,6 +10,8 @@
 </p>
 
 ---
+<img width="751" height="627" alt="image" src="https://github.com/user-attachments/assets/68e88d17-a5f0-464e-b5d1-410245b50934" />
+
 
 ## ⚙️ Toy Dimensions Used
 
