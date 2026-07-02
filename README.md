@@ -1,9 +1,9 @@
-# 🔁 Transformer Architecture — Full Step-by-Step Walkthrough
+# 🔁 Transformer Architecture — Complete Guide
 
-> Encoder → Decoder, numeric toy example, formula-by-formula.
-> Every shape, formula, and intermediate output is shown so you can trace a single sentence all the way through a Transformer.
+> From a 30,000-foot workflow diagram down to every formula and number.
+> Everything renders natively on GitHub — flowcharts via Mermaid, steps via collapsible sections.
 
-![Transformer](https://img.shields.io/badge/Architecture-Transformer-blue) ![Type](https://img.shields.io/badge/Task-Machine%20Translation-green) ![Level](https://img.shields.io/badge/Level-Beginner→Intermediate-orange)
+![Transformer](https://img.shields.io/badge/Architecture-Transformer-blue) ![Task](https://img.shields.io/badge/Task-Machine%20Translation-green) ![Level](https://img.shields.io/badge/Level-Beginner→Advanced-orange)
 
 ---
 
@@ -19,31 +19,197 @@ Translate an **English sentence (encoder input)** → **Tamil sentence (decoder 
 **Toy dimensions used throughout:** `d_model = 4`, `num_heads = 2`, `d_k = 2`, `vocab_size = 6`
 *(Real models use `d_model=512`, `8 heads`, `d_k=64`, `vocab=30k–50k` — same formulas, bigger numbers)*
 
-```
-┌─────────────────────────┐        ┌─────────────────────────┐
-│   ENCODER STACK (xN)     │        │   DECODER STACK (xN)     │
-│                          │        │                          │
-│  Self-Attention          │──K,V──▶│  Masked Self-Attention   │
-│  Add & Norm              │        │  Add & Norm              │
-│  Feed Forward            │        │  Cross-Attention         │
-│  Add & Norm              │        │  Add & Norm              │
-│                          │        │  Feed Forward            │
-│                          │        │  Add & Norm              │
-└─────────────────────────┘        │  Linear → Softmax        │
-                                    └─────────────────────────┘
-```
-
 ---
 
 ## 📑 Table of Contents
 
-- [Part 1 — Encoder Pipeline](#part-1--encoder-pipeline)
-- [Part 2 — Decoder Pipeline](#part-2--decoder-pipeline)
-- [Quick Formula Reference Sheet](#-quick-formula-reference-sheet)
+- [1. Workflow overview](#1-workflow-overview)
+- [2. Encoder stack, zoomed in](#2-encoder-stack-zoomed-in)
+- [3. Decoder stack, zoomed in](#3-decoder-stack-zoomed-in)
+- [4. Multi-head attention, internals](#4-multi-head-attention-internals)
+- [5. Masked multi-head attention, internals](#5-masked-multi-head-attention-internals)
+- [6. Full step-by-step encoder pipeline](#6-full-step-by-step-encoder-pipeline)
+- [7. Full step-by-step decoder pipeline](#7-full-step-by-step-decoder-pipeline)
+- [8. Quick formula reference sheet](#8-quick-formula-reference-sheet)
 
 ---
 
-## PART 1 — ENCODER PIPELINE
+## 1. Workflow overview
+
+The source sentence goes into the encoder stack. The target sentence, shifted right by one word, goes into the decoder stack. The encoder finishes, hands its output over as **K and V** to every decoder layer, and the decoder finally produces a probability over the vocabulary — one word at a time, feeding each predicted word back in as the next input.
+
+```mermaid
+graph TD
+    A[Source sentence] --> B[Encoder stack, xN]
+    C[Target sentence, shifted right] --> D[Decoder stack, xN]
+    B -- "K, V" --> D
+    D --> E[Linear + softmax]
+    E --> F[Predicted word]
+    F -. fed back as next input .-> C
+
+    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
+    classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    classDef purple fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    classDef amber fill:#FAEEDA,stroke:#854F0B,color:#412402
+    classDef green fill:#EAF3DE,stroke:#3B6D11,color:#173404
+    class A,C gray
+    class B teal
+    class D purple
+    class E amber
+    class F green
+```
+
+**Color key:** gray = raw input/output · teal = encoder · purple = decoder · amber = final projection · green = result
+
+---
+
+## 2. Encoder stack, zoomed in
+
+Four moves, repeated N times: turn words into vectors, let every word look at every other word, transform each word individually, then hand the result off as context.
+
+```mermaid
+graph TD
+    A[Tokenize and embed] --> B[Self-attention]
+    B --> C[Feed forward]
+    C --> D["Encoder output (K, V)"]
+
+    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
+    classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    class A gray
+    class B,C,D teal
+```
+
+| Stage | What happens | Sees |
+|---|---|---|
+| Tokenize and embed | Word → vector, plus a positional signal | itself only |
+| Self-attention | Every word blends in context from every other word | the whole sentence, both directions |
+| Feed forward | A small MLP reshapes each word's vector independently | itself only |
+| Encoder output | Final context vectors, reused as K and V by every decoder layer | — |
+
+---
+
+## 3. Decoder stack, zoomed in
+
+Same idea as the encoder, plus one extra move: **cross-attention**, where the decoder checks back on what the encoder produced. And its self-attention is *masked* — a word is never allowed to look ahead at words it hasn't generated yet.
+
+```mermaid
+graph TD
+    A[Tokenize and embed] --> B[Masked self-attention]
+    B --> C[Cross-attention]
+    C --> D[Feed forward]
+    D --> E[Linear + softmax]
+    E --> F[Predicted word]
+    G["Encoder output"] -. "K, V" .-> C
+
+    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
+    classDef purple fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    classDef amber fill:#FAEEDA,stroke:#854F0B,color:#412402
+    classDef green fill:#EAF3DE,stroke:#3B6D11,color:#173404
+    classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    class A gray
+    class B,C,D purple
+    class E amber
+    class F green
+    class G teal
+```
+
+| Stage | What happens | Sees |
+|---|---|---|
+| Tokenize and embed | Word → vector, plus a positional signal | itself only |
+| Masked self-attention | Each word blends context from itself and earlier words only | past words, never future ones |
+| Cross-attention | Each decoder word checks the full encoder output | the entire source sentence |
+| Feed forward | Per-word MLP, same as encoder | itself only |
+| Linear + softmax | Projects to vocabulary size, turns scores into probabilities | — |
+| Predicted word | `argmax` of the probability distribution | — |
+
+---
+
+## 4. Multi-head attention, internals
+
+This is what's inside every "self-attention" and "cross-attention" box above. Three separate linear layers turn the input into Query, Key, and Value; Q and K decide *how much* attention to pay; V supplies *what* gets passed through.
+
+```mermaid
+graph TD
+    Q[Linear - Q] --> M1["MatMul: Q x Kᵀ"]
+    K[Linear - K] --> M1
+    M1 --> S["Scale: ÷ √dₖ"]
+    S --> SM[Softmax]
+    SM --> M2["MatMul: weights x V"]
+    V[Linear - V] --> M2
+    M2 --> CC[Concat heads]
+    CC --> L[Linear, output projection]
+
+    classDef pink fill:#FBEAF0,stroke:#993556,color:#4B1528
+    classDef green2 fill:#EAF3DE,stroke:#3B6D11,color:#173404
+    classDef amber fill:#FAEEDA,stroke:#854F0B,color:#412402
+    classDef blue fill:#E6F1FB,stroke:#185FA5,color:#042C53
+    classDef coral fill:#FAECE7,stroke:#993C1D,color:#4A1B0C
+    classDef purple fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
+    classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    class Q pink
+    class K green2
+    class V amber
+    class M1,M2 blue
+    class S coral
+    class SM purple
+    class CC gray
+    class L teal
+```
+
+**In words:** score every word-pair with `Q · Kᵀ`, scale it down so gradients stay stable, turn scores into a probability distribution with softmax, use those probabilities to take a weighted average of V, then merge all the attention heads back together and project once more.
+
+> In the **encoder**, Q, K, and V all come from the same sentence.
+> In **cross-attention**, Q comes from the decoder, but K and V come from the encoder's output — that's how the decoder "looks back" at the source sentence.
+
+---
+
+## 5. Masked multi-head attention, internals
+
+Identical to above, with exactly one extra step: a **Mask**, inserted right before softmax, that blocks every position from seeing anything after itself.
+
+```mermaid
+graph TD
+    Q[Linear - Q] --> M1["MatMul: Q x Kᵀ"]
+    K[Linear - K] --> M1
+    M1 --> S["Scale: ÷ √dₖ"]
+    S --> MK["Mask: hide future positions"]
+    MK --> SM[Softmax]
+    SM --> M2["MatMul: weights x V"]
+    V[Linear - V] --> M2
+    M2 --> CC[Concat heads]
+    CC --> L[Linear, output projection]
+
+    classDef pink fill:#FBEAF0,stroke:#993556,color:#4B1528
+    classDef green2 fill:#EAF3DE,stroke:#3B6D11,color:#173404
+    classDef amber fill:#FAEEDA,stroke:#854F0B,color:#412402
+    classDef blue fill:#E6F1FB,stroke:#185FA5,color:#042C53
+    classDef coral fill:#FAECE7,stroke:#993C1D,color:#4A1B0C
+    classDef red fill:#FCEBEB,stroke:#A32D2D,color:#501313
+    classDef purple fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
+    classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    class Q pink
+    class K green2
+    class V amber
+    class M1,M2 blue
+    class S coral
+    class MK red
+    class SM purple
+    class CC gray
+    class L teal
+```
+
+**Why the mask exists:** during training, the decoder sees the entire target sentence at once for efficiency — but if word 3 could peek at word 5's real value, it would just learn to copy the answer instead of learning to predict it. The mask sets every future score to `-∞` before softmax, so those positions collapse to exactly `0` probability. A word can only ever attend to itself and what came before it.
+
+```
+masked_scores[i][j] = scores[i][j]   if j ≤ i
+                     = -∞             if j > i
+```
+
+---
+
+## 6. Full step-by-step encoder pipeline
 
 <details>
 <summary><b>Step 1 — Input Sentence</b></summary>
@@ -289,7 +455,7 @@ Translate an **English sentence (encoder input)** → **Tamil sentence (decoder 
 
 ---
 
-## PART 2 — DECODER PIPELINE
+## 7. Full step-by-step decoder pipeline
 
 <details>
 <summary><b>Step 16 — Target Input (shifted right)</b></summary>
@@ -461,7 +627,7 @@ Translate an **English sentence (encoder input)** → **Tamil sentence (decoder 
 
 ---
 
-## 📋 Quick Formula Reference Sheet
+## 8. Quick formula reference sheet
 
 | Component | Formula |
 |---|---|
@@ -479,4 +645,4 @@ Translate an **English sentence (encoder input)** → **Tamil sentence (decoder 
 
 ---
 
-<p align="center"><i>📖 Toy walkthrough for learning purposes — swap in real trained weight matrices (W_Q, W_K, W_V, W_O, W1, W2, W_vocab) to run this end-to-end in PyTorch/TensorFlow.</i></p>
+<p align="center"><i>📖 Toy walkthrough for learning purposes — swap in real trained weight matrices (W_Q, W_K, W_V, W_O, W1, W2, W_vocab) to run this end-to-end in PyTorch/TensorFlow.<br>Mermaid diagrams render natively on GitHub — no extra setup needed.</i></p>
